@@ -193,8 +193,8 @@ test_data = batchify(corpus.test, eval_batch_size)
 ntokens = len(corpus.dictionary)
 
 from random import sample
-seeds = sample(range(0, 4999), 2)
-seed_indices = range(1, 3)
+seeds = sample(range(0, 4999), 6)
+seed_indices = range(0, 6)
 print('> chr: The seeds are {}, the seed indices are {}'.format(seeds, [ind for ind in seed_indices]))
 for seed_index, seed in zip(seed_indices, seeds):
     # Set the random seed manually
