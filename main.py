@@ -62,8 +62,8 @@ def batchify(data, bsz):
     data = data.narrow(0, 0, nbatch * bsz)
     # Evenly divide the data across the bsz batches.
     data = data.view(bsz, -1).t().contiguous()
-    #if args.cuda:
-    #    data = data.cuda()
+    if args.cuda:
+        data = data.cuda()
     return data
 
 ###############################################################################
