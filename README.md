@@ -1,4 +1,4 @@
-Code for the recurrent neural network language models discussed in "Comparing gated and simple recurrent neural network architectures as models of human sentence processing": https://psyarxiv.com/wec74/
+Code for the recurrent neural network language models discussed in "Comparing gated and simple recurrent neural network architectures as models of human sentence processing" (unpublished).
 
 The code is based on the neural network language model example provided by PyTorch: https://github.com/pytorch/examples/tree/master/word_language_model
 
