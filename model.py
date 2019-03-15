@@ -5,14 +5,13 @@ from torch.autograd import Variable
 class arche_RNN(nn.Module):
     """A dummy class to return weights and biases. Allows to feed the same weights into different rnn classes."""
 
-    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0, tie_weights=False):
+    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers):
         self.predecoder_out = 400
 
         super(arche_RNN, self).__init__()
-        self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout)
+            self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers)
 
         else:
             try:
@@ -20,7 +19,7 @@ class arche_RNN(nn.Module):
             except KeyError:
                 raise ValueError("""An invalid option for `--model` was supplied,
                                           options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
-            self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
+            self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity)
         self.predecoder = nn.Linear(nhid, self.predecoder_out)
         self.tanh = nn.Tanh()
         self.decoder = nn.Linear(self.predecoder_out, ntoken)
@@ -43,15 +42,14 @@ class arche_RNN(nn.Module):
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a tanh pre-decoder, a decoder."""
 
-    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout,
-                 encoder_weights, recurrent_weights, predecoder_bias, predecoder_weights, decoder_bias, decoder_weight):
+    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, encoder_weights,
+                 recurrent_weights, predecoder_bias, predecoder_weights, decoder_bias, decoder_weight):
         self.predecoder_out = 400
 
         super(RNNModel, self).__init__()
-        self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout)
+            self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers)
             if rnn_type == 'LSTM':
                 for index, param in enumerate(self.rnn.parameters()):
                     param.data = torch.FloatTensor(recurrent_weights[0][index].data)
@@ -64,7 +62,7 @@ class RNNModel(nn.Module):
             except KeyError:
                 raise ValueError("""An invalid option for `--model` was supplied,
                                       options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
-            self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
+            self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity)
             # Reset weights to those fed into the class call
             for index, param in enumerate(self.rnn.parameters()):
                 param.data = torch.FloatTensor(recurrent_weights[0][index][:nhid].data)
@@ -85,7 +83,7 @@ class RNNModel(nn.Module):
         self.nlayers = nlayers
 
     def forward(self, input, hidden):
-        emb = self.drop(self.encoder(input))
+        emb = self.encoder(input)
         output_rnn, hidden = self.rnn(emb, hidden)
         output_predecoder = self.tanh(self.predecoder(output_rnn))
         decoded = self.decoder(output_predecoder.view(output_predecoder.size(0)*output_predecoder.size(1), output_predecoder.size(2)))

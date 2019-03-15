@@ -1,59 +1,73 @@
+######################################################
+# Christoph Aurnhammer, 2019                         #
+# Pertaining to Aurnhammer, Frank (2019)             #
+# Comparing gated and simple recurrent neural        #
+# networks as models of human sentence processing    #
+#                                                    #
+# Maintained at github.com/caurnhammer/gated_cells   #
+# Adpated from pytorch word_language_model           #
+######################################################
+
 # coding: utf-8
 import argparse
 import time
 import math
 import numpy
 import torch
+import torch.optim as optim
 from torch.autograd import Variable
 from torch.nn.functional import log_softmax
+from random import sample
+# import scripts data.py and model.py
 import data
+import model
 
-parser = argparse.ArgumentParser(description='PyTorch ENCOW RNN/GRU/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./corpus/',
-                    help='location of the data corpus')
-parser.add_argument('--model', type=str, default='LSTM',
-                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
-parser.add_argument('--emsize', type=int, default=400,
-                    help='size of word embeddings')
-parser.add_argument('--nhid', type=int, default=500,
-                    help='number of hidden units per layer')
-parser.add_argument('--nlayers', type=int, default=1,
-                    help='number of layers')
-parser.add_argument('--lr', type=float, default=0.0025,
-                    help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.25,
-                    help='gradient clipping')
-parser.add_argument('--epochs', type=int, default=1,
-                    help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=1, metavar='N',
-                    help='batch size')
-parser.add_argument('--bptt', type=int, default=41,
-                    help='sequence length')
-parser.add_argument('--dropout', type=float, default=0,
-                    help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--tied', action='store_true',
-                    help='tie the word embedding and softmax weights')
-parser.add_argument('--seed', type=int, default=1111,
-                    help='random seed')
-parser.add_argument('--cuda', action='store_true',
-                    help='use CUDA')
-parser.add_argument('--log-interval', type=int, default=10000, metavar='N',
-                    help='report interval')
-parser.add_argument('--save', type=str,  default='./output/',
-                    help='path to save the final model')
-args = parser.parse_args()
+def parse_args():
+    # parse command line arguments, returned as attribute to object "args"
+    parser = argparse.ArgumentParser(description='PyTorch ENCOW RNN/GRU/LSTM Language Model')
+    parser.add_argument('--data', type=str, default='./corpus/',
+                        help='location of the data corpus')
+    parser.add_argument('--model', type=str, default='LSTM',
+                        help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
+    parser.add_argument('--emsize', type=int, default=400,
+                        help='size of word embeddings')
+    parser.add_argument('--nhid', type=int, default=500,
+                        help='number of hidden units per layer')
+    parser.add_argument('--nlayers', type=int, default=1,
+                        help='number of layers')
+    parser.add_argument('--lr', type=float, default=0.0025,
+                        help='initial learning rate')
+    parser.add_argument('--clip', type=float, default=0.25,
+                        help='gradient clipping')
+    parser.add_argument('--epochs', type=int, default=1,
+                        help='upper epoch limit')
+    parser.add_argument('--batch_size', type=int, default=1, metavar='N',
+                        help='batch size')
+    parser.add_argument('--bptt', type=int, default=41,
+                        help='sequence length')
+    parser.add_argument('--dropout', type=float, default=0,
+                        help='dropout applied to layers (0 = no dropout)')
+    parser.add_argument('--tied', action='store_true',
+                        help='tie the word embedding and softmax weights')
+    parser.add_argument('--seed', type=int, default=1111,
+                        help='random seed')
+    parser.add_argument('--cuda', action='store_true',
+                        help='use CUDA')
+    parser.add_argument('--log-interval', type=int, default=10000, metavar='N',
+                        help='report interval')
+    parser.add_argument('--save', type=str, default='./output/',
+                        help='path to save the final model')
+    args = parser.parse_args()
+    return args
 
-# Set the random seed manually for reproducibility.
-torch.manual_seed(args.seed)
-if torch.cuda.is_available():
-    if not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
-    else:
-        torch.cuda.manual_seed(args.seed)
-
-###############################################################################
-# Load data
-###############################################################################
+def set_torch_seed(seed):
+    # Set the random seed for reproducibility across model types
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        if not args.cuda:
+            print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+        else:
+            torch.cuda.manual_seed(seed)
 
 def batchify(data, bsz):
     # Work out how cleanly we can divide the dataset into bsz parts.
@@ -66,10 +80,6 @@ def batchify(data, bsz):
         data = data.cuda()
     return data
 
-###############################################################################
-# Training code
-###############################################################################
-
 def repackage_hidden(h):
     """Wraps hidden states in new Variables, to detach them from their history."""
     if type(h) == Variable:
@@ -77,92 +87,109 @@ def repackage_hidden(h):
     else:
         return tuple(repackage_hidden(v) for v in h)
 
-
-# get_batch subdivides the source data into chunks of length args.bptt.
-# If source is equal to the example output of the batchify function, with
-# a bptt-limit of 2, we'd get the following two Variables for i = 0:
-# ┌ a g m s ┐ ┌ b h n t ┐
-# └ b h n t ┘ └ c i o u ┘
-# Note that despite the name of the function, the subdivison of data is not
-# done along the batch dimension (i.e. dimension 1), since that was handled
-# by the batchify function. The chunks are along dimension 0, corresponding
-# to the seq_len dimension in the LSTM.
-
 def get_batch(source, i, evaluation=False):
     seq_len = min(args.bptt, len(source) - 1 - i)
-    data = Variable(source[i:i+seq_len], volatile=evaluation)
+    data = Variable(source[i:i+seq_len])
     target = Variable(source[i+1:i+1+seq_len].view(-1))
     return data, target
 
-def evaluate(data_source):
-    # Turn on evaluation mode which disables dropout.
-    model.eval()
-    total_loss = 0
+def evaluate(rnn_model, data_source, criterion):
+    if args.cuda:
+        data_source = data_source.cuda()
+    # Turn on evaluation mode
+    rnn_model.eval()
+    # Define end of sentence index
+    eos = get_eos()
+    # Initiate variables for loss computation
     ntokens = len(corpus.dictionary)
-    # chr: define end of sentence index
+    total_loss = 0
+    data_len = 1
+    # Loop through test data
+    for i in range(0, data_source.size(0) - 1, args.bptt):
+        data, targets = get_batch(data_source, i, evaluation=True)
+        for j in range(len(data)):
+            if (data[j].data == eos)[0] == True:
+                # Cut off data at end of sentence
+                data = data[:j,:1]
+                targets = targets[:j]
+                break
+        hidden = rnn_model.init_hidden(eval_batch_size)
+        output, hidden = rnn_model(data, hidden)
+        total_loss += len(data) * criterion(log_softmax(output.view(-1, ntokens), dim=1), targets).data
+        data_len += len(data)
+    return total_loss.item() / data_len
+
+def shuffle_train_data(train_data):
+    # Randomise training data (according to current seed)
+    # Set numpy random seed to current seed
+    numpy.random.seed(torch.initial_seed())
+    # Convert to numpy array for shuffling (changing the np array changes the torch tensor as well)
+    train_data = train_data.cpu()
+    train_np = train_data.numpy()
+    # Shuffle using numpy methods
+    N = args.bptt  # Blocks of N rows
+    M, n = train_np.shape[0] // N, train_np.shape[1]  # Parameters for reshape (num sentences, num rows)
+    numpy.random.shuffle(train_np.reshape(M, -1, n))
+    del train_np
+    # After shuffling with numpy, set data to GPU
+    if args.cuda:
+        train_data = train_data.cuda()
+    return train_data
+
+def get_eos():
     if args.cuda:
         a = torch.cuda.LongTensor([dictionary.word2idx['<eos>']])
     else:
         a = torch.LongTensor([dictionary.word2idx['<eos>']])
-    data_len = 1
-    for i in range(0, data_source.size(0) - 1, args.bptt):
-        data, targets = get_batch(data_source, i, evaluation=True)
-        #chr: cut off data at end of sentence
-        for j in range(len(data)):
-            if (data[j].data == a)[0] == True:
-                data = data[:j,:1]
-                targets = targets[:j]
-                break
-        hidden = model.init_hidden(eval_batch_size)
-        data_len += len(data)
-        output, hidden = model(data, hidden)
-        total_loss += len(data) * crit(log_softmax(output.view(-1, ntokens), dim=1), targets).data
-    return total_loss[0] / data_len
+    return a
 
-def train(seed_index):
-    # Turn on training mode which enables dropout.
-    global model
-    model.train()
+def train(rnn_model, model_name, seed_index, criterion):
+    # Turn on training mode.
+    rnn_model.train()
     total_loss = 0
     start_time = time.time()
-    ntokens = len(corpus.dictionary)
 
-    import torch.optim as optim
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-    lr_decay = True
+    # Define optimize, set initial learning rate & constant momentum
+    lr = args.lr
+    optimizer = optim.SGD(rnn_model.parameters(), lr=lr, momentum=0.9)
 
-    #chr: define end of sentence index
-    if args.cuda:
-       a = torch.cuda.LongTensor([dictionary.word2idx['<eos>']])
-    else:
-       a = torch.LongTensor([dictionary.word2idx['<eos>']])
+    # Define number of sentences at which to take snapshots
+    snapshots = [1000 - 1, 3000 - 1, 10000 - 1, 30000 - 1, 100000 - 1, 300000 - 1, 1000000 - 1, 3000000 - 1,
+                 (len(train_data) // args.bptt) - 1]
+
+    # Define end of sentence index
+    eos = get_eos()
+
+    # Loop through training data
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i)
         # chr: cut off data at end of sentence
         for j in range(len(data)):
-            if (data[j].data == a)[0] == True: # = end of sentence is reached - remove filler masking elements
+            if (data[j].data == eos)[0] == True:
+                # = end of sentence is reached - remove filler masking elements
+                # input data and targets
                 data = data[:j,:1]
                 targets = targets[:j]
                 break
 
-        # Starting each batch, we detach the hidden state from how it was previously produced.
-        # If we didn't, the model would try backpropagating all the way to start of the dataset.
-        hidden = model.init_hidden(args.batch_size)
-        model.zero_grad()
-        output, hidden = model(data, hidden)
+        # Reset hidden states for new sequence
+        hidden = rnn_model.init_hidden(args.batch_size)
+        rnn_model.zero_grad() # Set gradients to zero for the optimiser
+        output, hidden = rnn_model(data, hidden)
 
-        # training
-        loss = crit(log_softmax(output.view(-1, ntokens), dim=1), targets)
+        # Optimize network
+        loss = criterion(log_softmax(output.view(-1, ntokens), dim=1), targets)
         loss.backward()
         optimizer.step()
 
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(rnn_model.parameters(), args.clip)
         total_loss += loss.data
 
+        # Print user feedback
         if batch % args.log_interval == 0 and batch > 0:
-            cur_loss = total_loss[0] / args.log_interval
-            elapsed = time.time() - start_time
+            cur_loss = total_loss[0] / args.log_interval # current loss
+            elapsed = time.time() - start_time           # elapsed time
             print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.5f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, args.lr,
@@ -170,99 +197,75 @@ def train(seed_index):
             total_loss = 0
             start_time = time.time()
 
-        # in every nth of the training data: anneal learning rate
+        # Anneal learning rate in every 3rd of the training data
         if batch in range(0, len(train_data) // args.bptt, len(train_data) // args.bptt // 3) and batch > 0:
-            args.lr /= math.sqrt(4.0)
-            optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-            print('Updated learning rate to {}'.format(args.lr))
+            lr /= math.sqrt(4.0)
+            optimizer = optim.SGD(rnn_model.parameters(), lr=lr, momentum=0.9)
+            print('Updated learning rate to {}'.format(lr))
 
-        snapshots = [1000-1, 3000-1, 10000-1, 30000-1, 100000-1, 300000-1, 1000000-1, 3000000-1, (len(train_data)//args.bptt)-1]
         if batch in snapshots:
-            with open(args.save+args.model+'_'+str(batch+1)+'_'+str(seed_index), 'wb') as f:
-                torch.save(model, f)
+            with open(args.save+model_name+'_'+str(batch+1)+'_'+str(seed_index), 'wb') as f:
+                torch.save(rnn_model, f)
                 print('> Saved snapshot at {} sentences to disc'.format(batch+1))
+    return rnn_model
 
-## EXECUTION
-# Process corpus
-corpus = data.Corpus(args.data, args.bptt)
-dictionary = corpus.dictionary
-eval_batch_size = 1
-train_data = batchify(corpus.train, args.batch_size)
-val_data = batchify(corpus.valid, eval_batch_size)
-test_data = batchify(corpus.test, eval_batch_size)
-ntokens = len(corpus.dictionary)
+if __name__ == '__main__':
+    # Parse command line arguments
+    args = parse_args()
 
-from random import sample
-seeds = sample(range(0, 4999), 6)
-seed_indices = range(0, 6)
-print('> chr: The seeds are {}, the seed indices are {}'.format(seeds, [ind for ind in seed_indices]))
-for seed_index, seed in zip(seed_indices, seeds):
-    # Set the random seed manually
-    args.seed = seed
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        if not args.cuda:
-            print("WARNING: You have a CUDA device, so you should probably run with --cuda")
-        else:
-            torch.cuda.manual_seed(args.seed)
+    # Process corpus
+    corpus = data.Corpus(args.data, args.bptt)
+    dictionary = corpus.dictionary
+    ntokens = len(corpus.dictionary)
+    train_data = batchify(corpus.train, args.batch_size)
+    eval_batch_size = 1
+    val_data = batchify(corpus.valid, eval_batch_size)
+    test_data = batchify(corpus.test, eval_batch_size)
 
-    # Randomise training data (according to current seed)
-    # Set numpy random seed to current seed
-    numpy.random.seed(seed)
-    # Convert to numpy array for shuffling (changing the np array changes the torch tensor as well)
-    train_data = train_data.cpu()
-    train_np = train_data.numpy()
-    # Shuffle using numpy methods
-    N = args.bptt  # Blocks of N rows
-    M, n = train_np.shape[0] // N, train_np.shape[1] # Parameters for reshape (num sentences, num rows)
-    numpy.random.shuffle(train_np.reshape(M,-1,n))
-    del train_np
+    # Generate reusable random seeds
+    seeds = sample(range(0, 4999), 6)
+    seed_indices = range(0, 6)
+    print('> chr: The seeds are {}, the seed indices are {}'.format(seeds, [ind for ind in seed_indices]))
 
-    # After shuffling with numpy, set data to GPU
-    if args.cuda:
-        train_data = train_data.cuda()
+    # Loop through seeds (corresponding to models with same sentence order and same initial weights)
+    for seed_index, seed in zip(seed_indices, seeds):
+        # Set the torch random seed
+        torch.manual_seed(seed)
 
-    # Initialise weights for all model types (using current seed)
-    import model
-    archetype = model.arche_RNN('LSTM', ntokens, args.emsize, args.nhid, args.nlayers, args.dropout)
-    encoder_weights, predecoder_bias, predecoder_weights, decoder_bias, decoder_weight = archetype.init_weights()
-    recurrent_weights = archetype.rnn.all_weights
-    del archetype
+        # Randomise sentence order in train data (using current seed)
+        train_data = shuffle_train_data(train_data)
 
-    models = ['RNN_TANH', 'GRU', 'LSTM']
-    for model_name in models:
-        import model
+        # Initialise weights for all model types (using current seed)
+        arche = model.arche_RNN('LSTM', ntokens, args.emsize, args.nhid, args.nlayers)
+        arche.init_weights()
 
-        args = parser.parse_args()
-        args.model = model_name
-        model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout,
-                               encoder_weights, recurrent_weights, predecoder_bias, predecoder_weights,
-                               decoder_bias, decoder_weight)
+        # For this sentence order and these weights, create on of each RNN types
+        models = ['RNN_TANH', 'GRU', 'LSTM']
+        for model_name in models:
+            # Initialise the rnn model
+            rnn_model = model.RNNModel(model_name, ntokens, args.emsize, args.nhid, args.nlayers,
+                                       arche.encoder.weight.data, arche.rnn.all_weights, arche.predecoder.bias.data,
+                                       arche.predecoder.weight.data, arche.decoder.bias.data, arche.decoder.weight.data)
+            if args.cuda:
+                rnn_model.cuda()
+            print('Initialised Model:', rnn_model.parameters)
 
-        if args.cuda:
-            model.cuda()
-        print('Initialised Model:', model.parameters)
-        crit = torch.nn.NLLLoss()
-
-        # Loop over epochs.
-        # At any point you can hit Ctrl + C to break out of training early.
-        try:
-            best_val_loss = None
+            # Define common criterion for training, validating, testing
+            criterion = torch.nn.NLLLoss()
+            # Loop through epochs.
             for epoch in range(1, args.epochs + 1):
                 epoch_start_time = time.time()
-                train(seed_index)
-                #val_loss = evaluate(val_data)
+                rnn_model = train(rnn_model, model_name, seed_index, criterion)
+                # Evaluate on validation data after each epoch
+                val_loss = evaluate(rnn_model, val_data, criterion)
+                print('=' * 89)
+                print('| Validation | loss {:5.2f} | ppl {:8.2f}'.format(
+                    val_loss, math.exp(val_loss)))
+                print('=' * 89)
 
-        except KeyboardInterrupt:
-            print('-' * 89)
-            print('Exiting from training early')
-
-        # Run on test data.
-        if args.cuda:
-            test_data = test_data.cuda()
-        test_loss = evaluate(test_data)
-        print('=' * 89)
-        print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
-            test_loss, math.exp(test_loss)))
-        print('=' * 89)
-        del model
+            # Evaluate on test data
+            test_loss = evaluate(rnn_model, test_data, criterion)
+            print('=' * 89)
+            print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+                test_loss, math.exp(test_loss)))
+            print('=' * 89)
