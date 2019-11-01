@@ -1,5 +1,4 @@
 function read_data(experiment)
-
     #= Read data from one of the experiments (exp={SPR,ET,EEG}) and do preprocessing:
     - Log-transform RTs
     - Add columns for previous-word covariates

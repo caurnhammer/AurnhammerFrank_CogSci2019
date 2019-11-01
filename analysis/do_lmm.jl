@@ -117,9 +117,9 @@ CSV.write("lmm_ET.csv", fit_results; delim='\t')
 data_EEG = read_data("EEG")
 print("Fitting LMMs to EEG data\n")
 
-basedev_EEG = deviance(fit(LinearMixedModel, @formula(N400 ~ baseline + log_freq * nr_char * word_pos
-                                                      + (1|subj_nr) + (0+baseline|subj_nr) + (0+log_freq|subj_nr) + (0+nr_char|subj_nr) + (0+word_pos|subj_nr)
-                                                      + (1|item)), data_EEG))
+basedev_EEG = deviance(fit(LinearMixedModel, @formula(N400 ~ baseline + log_freq * nr_char * word_pos + (1|subj_nr)
+                                                     + (0+baseline|subj_nr) + (0+log_freq|subj_nr) + (0+nr_char|subj_nr) + 
+                                                       (0+word_pos|subj_nr) + (1|item)), data_EEG))
 
 fit_results = DataFrame(rep=Int64[], epoch=Int64[], rnntype=String[], chi2=Float64[], b_surp=Float64[], z_surp=Float64[], avsurp=Float64[])
 fit_surps(data_EEG, basedev_EEG)
