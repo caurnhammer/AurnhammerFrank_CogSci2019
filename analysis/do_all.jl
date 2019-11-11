@@ -19,7 +19,7 @@ prevsurp_col = size(surprisal,2)+1                                     # Columns
 
 for c = surp_col:size(surprisal,2)
     col_name = String(names(surprisal)[c])
-    surprisal[Symbol(col_name*"_prev")] = [missing; surprisal[1:end-1,c]]
+    surprisal[:,Symbol(col_name*"_prev")] = [missing; surprisal[1:end-1,c]]
 end
 
 include("do_lmm.jl")                      # Fit LMMs to explain human data from RNN surprisal estimates

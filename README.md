@@ -4,6 +4,7 @@ Citation: Aurnhammer, C., & Frank, S. L. (2019). Comparing gated and simple recu
 RNN code (in Python) in directory rnns/ .
 
 Statistical analysis code (in Julia) in directory analysis/ .
+Analysis code requires dev version of package MixedModels to allow for uncorrelated random intercepts and random slopes.
 
 Data used in this research available for download at https://osf.io/pnv4h/
 

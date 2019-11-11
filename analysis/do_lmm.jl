@@ -17,17 +17,17 @@ function fit_1surp(data, basedev, col, prevcol)
     # Correlation terms are not included because these mess with the log-likelihoods: They come to
     # diverge from the z-scores, which are more reliable because they are hardly affected by the correlation terms
     if :logRT in names(data)
-        model = fit(LinearMixedModel, @formula(logRT ~ surp + surp_prev + logRT_prev * log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos
+        model = fit!(LinearMixedModel(@formula(logRT ~ surp + surp_prev + logRT_prev * log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos
                                                + (1|subj_nr) + (0+surp|subj_nr) + (0+surp_prev|subj_nr) + (0+logRT_prev|subj_nr) + (0+log_freq|subj_nr) + (0+log_freq_prev|subj_nr)
-                                               + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) + (1|item)), data_surp)
+                                               + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) + (1|item)), data_surp))
     elseif :logRTfirstpass in names(data)
-        model = fit(LinearMixedModel, @formula(logRTfirstpass ~ surp + surp_prev + log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos * prevfix
+        model = fit!(LinearMixedModel(@formula(logRTfirstpass ~ surp + surp_prev + log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos * prevfix
                                                + (1|subj_nr) + (0+surp|subj_nr) + (0+surp_prev|subj_nr) + (0+log_freq|subj_nr) + (0+log_freq_prev|subj_nr)
-                                               + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) +(0+prevfix|subj_nr) + (1|item) + (0+prevfix|item)), data_surp)
+                                               + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) +(0+prevfix|subj_nr) + (1|item) + (0+prevfix|item)), data_surp))
     else
-        model = fit(LinearMixedModel, @formula(N400 ~ surp + baseline + log_freq * nr_char * word_pos
+        model = fit!(LinearMixedModel(@formula(N400 ~ surp + baseline + log_freq * nr_char * word_pos
                                                + (1|subj_nr) + (0+surp|subj_nr) + (0+baseline|subj_nr) + (0+log_freq|subj_nr) + (0+nr_char|subj_nr) + (0+word_pos|subj_nr)
-                                               + (1|item)), data_surp)
+                                               + (1|item)), data_surp))
     end
 
     # Return deviance decrease (chi-squared), coefficient(s), z-score(s), and average surprisal
@@ -81,11 +81,13 @@ end
 # Self-paced reading
 #---------------------------------------------------------------------
 data_SPR = read_data("SPR")
+data_SPR.subj_nr = CategoricalArray(data_SPR.subj_nr) # Change data types to categorical
+data_SPR.item = CategoricalArray(data_SPR.item)
 print("Fitting LMMs to SPR data\n")
 
-basedev_SPR = deviance(fit(LinearMixedModel, @formula(logRT ~ logRT_prev * log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos
+basedev_SPR = deviance(fit!(LinearMixedModel(@formula(logRT ~ logRT_prev * log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos
                                                       + (1|subj_nr) + (0+logRT_prev|subj_nr) + (0+log_freq|subj_nr) + (0+log_freq_prev|subj_nr)
-                                                      + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) + (1|item)), data_SPR))
+                                                      + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) + (1|item)), data_SPR)))
 
 fit_results = DataFrame(rep=Int64[], epoch=Int64[], rnntype=String[], chi2=Float64[], b_surp=Float64[], z_surp=Float64[], b_prevsurp=Float64[], z_prevsurp=Float64[], avsurp=Float64[])
 fit_surps(data_SPR, basedev_SPR)
@@ -96,11 +98,14 @@ CSV.write("lmm_SPR.csv", fit_results; delim='\t')
 # Eye tracking
 #---------------------------------------------------------------------
 data_ET = read_data("ET")
+data_ET.subj_nr = CategoricalArray(data_ET.subj_nr) # Change data types to categorical
+data_ET.item = CategoricalArray(data_ET.item)
+data_ET.prevfix = CategoricalArray(data_ET.prevfix)
 print("Fitting LMMs to ET data\n")
 
-basedev_ET = deviance(fit(LinearMixedModel, @formula(logRTfirstpass ~ log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos * prevfix
+basedev_ET = deviance(fit!(LinearMixedModel(@formula(logRTfirstpass ~ log_freq * log_freq_prev * nr_char * nr_char_prev * word_pos * prevfix
                                                      + (1|subj_nr) + (0+log_freq|subj_nr) + (0+log_freq_prev|subj_nr)
-                                                     + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) +(0+prevfix|subj_nr) + (1|item) + (0+prevfix|item)), data_ET))
+                                                     + (0+nr_char|subj_nr) + (0+nr_char_prev|subj_nr) + (0+word_pos|subj_nr) +(0+prevfix|subj_nr) + (1|item) + (0+prevfix|item)), data_ET)))
 
 #= To get a Gamma GLMM, do the following (Somehow, I can't get GLMMs to work with more than one effect per random variable)
 using GLM
@@ -115,11 +120,13 @@ CSV.write("lmm_ET.csv", fit_results; delim='\t')
 # Electroencephalography
 #---------------------------------------------------------------------
 data_EEG = read_data("EEG")
+data_EEG.subj_nr = CategoricalArray(data_EEG[:,:subj_nr]) # Change data types to categorical
+data_EEG.item = CategoricalArray(data_EEG[:,:item])
 print("Fitting LMMs to EEG data\n")
 
-basedev_EEG = deviance(fit(LinearMixedModel, @formula(N400 ~ baseline + log_freq * nr_char * word_pos + (1|subj_nr)
+basedev_EEG = deviance(fit!(LinearMixedModel(@formula(N400 ~ baseline + log_freq * nr_char * word_pos + (1|subj_nr)
                                                      + (0+baseline|subj_nr) + (0+log_freq|subj_nr) + (0+nr_char|subj_nr) + 
-                                                       (0+word_pos|subj_nr) + (1|item)), data_EEG))
+                                                       (0+word_pos|subj_nr) + (1|item)), data_EEG)))
 
 fit_results = DataFrame(rep=Int64[], epoch=Int64[], rnntype=String[], chi2=Float64[], b_surp=Float64[], z_surp=Float64[], avsurp=Float64[])
 fit_surps(data_EEG, basedev_EEG)
