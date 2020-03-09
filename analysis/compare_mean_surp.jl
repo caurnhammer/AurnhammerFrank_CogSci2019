@@ -1,11 +1,14 @@
 # Do pairwise tests for effects of one model's surprisal estimates over and above the other,
 # comparing SRN, GRU and LSTM after averaging surprisal over training repetitions (fully trained only)
 
-using Distributions
+using Distributions, CategoricalArrays
 
 function add_mean_surp(new_col_name, surp_col_names)
-    surp_array = Array(surprisal[surp_col_names]) 
-    mean_surp  = sum(surp_array,2)./length(surp_col_names)     # Oddly, this works but mean(surp_array,2) fails on missing items
+    surp = surprisal[surp_col_names]
+    mean_surp = Array{Union{Missing, Float64}}(undef, size(surp,1), 1)
+    for i = collect(1:1:size(surp,1))
+        mean_surp[i,:] .= mean(surp[i,:])
+    end
     surprisal[new_col_name] = vec(mean_surp)
     surprisal
 end
@@ -23,7 +26,7 @@ function benjamini(pvals,fdr=.05)
     nrcomp = length(pvals)
     ind    = sortperm(pvals)    # Sort indices of p-values from lowest to highest p-value
     pvals  = pvals[ind]         # Sort p-values 
-    sort(ind[1:find(pvals .<= fdr*collect(1:nrcomp)/nrcomp)[end]])
+    sort(ind[1:findall(pvals .<= fdr*collect(1:nrcomp)/nrcomp)[end]])
 end
 
 function create_data_surp(data)   
@@ -36,11 +39,13 @@ function create_data_surp(data)
     surprisal = add_mean_surp(:srn_prev, [ :SRN_6470000_0_surprisal_prev, :SRN_6470000_1_surprisal_prev, :SRN_6470000_2_surprisal_prev, :SRN_6470000_3_surprisal_prev, :SRN_6470000_4_surprisal_prev, :SRN_6470000_5_surprisal_prev])
     surprisal = add_mean_surp(:gru_prev, [ :GRU_6470000_0_surprisal_prev, :GRU_6470000_1_surprisal_prev, :GRU_6470000_2_surprisal_prev, :GRU_6470000_3_surprisal_prev, :GRU_6470000_4_surprisal_prev, :GRU_6470000_5_surprisal_prev])
     surprisal = add_mean_surp(:lstm_prev,[:LSTM_6470000_0_surprisal_prev,:LSTM_6470000_1_surprisal_prev,:LSTM_6470000_2_surprisal_prev,:LSTM_6470000_3_surprisal_prev,:LSTM_6470000_4_surprisal_prev,:LSTM_6470000_5_surprisal_prev])
-
+    
     # Join human data with surprisal values and normalize suprisals
     surp_df = surprisal[[:srn, :gru, :lstm, :srn_prev, :gru_prev, :lstm_prev, :item]]
     data_surp = join(data, surp_df, kind=:left, on=:item, makeunique=true)
     data_surp[[:srn, :gru, :lstm, :srn_prev, :gru_prev, :lstm_prev]] = zscore(data_surp[[:srn, :gru, :lstm, :srn_prev, :gru_prev, :lstm_prev]])
+    data_surp[!,1] = CategoricalArray(data_surp[!,1]) # subject
+    data_surp[!,4] = CategoricalArray(data_surp[!,1]) # item
     data_surp
 end
 
@@ -87,12 +92,12 @@ function print_model_comparisons(chi2,df,sign)
     end
 
     chi2text = " χ²(" * repr(df) * ") = "
-    println("SRN over GRU :" * chi2text * repr(round(chi2[1,2],2)) * asterisks(sign,3))
-    println("SRN over LSTM:" * chi2text * repr(round(chi2[1,3],2)) * asterisks(sign,5))
-    println("GRU over SRN :" * chi2text * repr(round(chi2[2,1],2)) * asterisks(sign,1))
-    println("GRU over LSTM:" * chi2text * repr(round(chi2[2,3],2)) * asterisks(sign,6))
-    println("LSTM over SRN:" * chi2text * repr(round(chi2[3,1],2)) * asterisks(sign,2))
-    println("LSTM over GRU:" * chi2text * repr(round(chi2[3,2],2)) * asterisks(sign,4))
+    println("SRN over GRU :" * chi2text * repr(round(chi2[1,2],digits=3)) * asterisks(sign,3))
+    println("SRN over LSTM:" * chi2text * repr(round(chi2[1,3],digits=3)) * asterisks(sign,5))
+    println("GRU over SRN :" * chi2text * repr(round(chi2[2,1],digits=3)) * asterisks(sign,1))
+    println("GRU over LSTM:" * chi2text * repr(round(chi2[2,3],digits=3)) * asterisks(sign,6))
+    println("LSTM over SRN:" * chi2text * repr(round(chi2[3,1],digits=3)) * asterisks(sign,2))
+    println("LSTM over GRU:" * chi2text * repr(round(chi2[3,2],digits=3)) * asterisks(sign,4))
 end
 
 function do_fit(data_type, surp_from)
@@ -130,7 +135,7 @@ function do_fit(data_type, surp_from)
     else error("Unknown data type"*data_type)
     end
 
-    fit(LinearMixedModel, eval(parse("@formula" * formula_str)), data_surp)
+    fit!(LinearMixedModel(eval(Meta.parse("@formula" * formula_str)), data_surp))
 end
 #-------------------------------------------------------------------------------------------------------------------
 println("Doing pairwise model comparisons")
@@ -263,8 +268,8 @@ sign05  = setdiff(benjamini(p_vals,.05), [sign01;sign001])   # indices of p_vals
 
 # Split by data type
 sign_SPR = (sign001[sign001.<=6],                      sign01[ sign01 .<=6],                      sign05[ sign05 .<=6])
-sign_ET  = (sign001[(sign001.>6) .& (sign001.<=12)]-6, sign01[ (sign01 .>6) .& (sign01 .<=12)]-6, sign05[ (sign05 .>6) .& (sign05 .<=12)]-6)
-sign_EEG = (sign001[sign001.>12]-12,                   sign01[ sign01 .>12]-12,                   sign05[ sign05 .>12]-12)
+sign_ET  = (sign001[(sign001.>6) .& (sign001.<=12)].-6, sign01[ (sign01 .>6) .& (sign01 .<=12)].-6, sign05[ (sign05 .>6) .& (sign05 .<=12)].-6)
+sign_EEG = (sign001[sign001.>12].-12,                   sign01[ sign01 .>12].-12,                   sign05[ sign05 .>12].-12)
 
 println("\nSelf-paced reading")
 println("------------------")
