@@ -21,20 +21,20 @@ function do_gam(lmm_rnn)
 end
 
 function get_gam_curve(lmm_results)
-    lmm_results[:effect]  = lmm_results[:chi2] .* sign.(lmm_results[:b_surp])                  # reverse effect direction if coefficient negative. What if b_surp and b_prevsurp of unequal sign?!
-    lmm_results[:logprob] = -lmm_results[:avsurp]
+    lmm_results[!,:effect]  = lmm_results[!,:chi2] .* sign.(lmm_results[!,:b_surp])                  # reverse effect direction if coefficient negative. What if b_surp and b_prevsurp of unequal sign?!
+    lmm_results[!,:logprob] = -lmm_results[!,:avsurp]
 
-    lmm_srn  = lmm_results[lmm_results[:rnntype].=="SRN",:]
-    lmm_gru  = lmm_results[lmm_results[:rnntype].=="GRU",:]
-    lmm_lstm = lmm_results[lmm_results[:rnntype].=="LSTM",:]
+    lmm_srn  = lmm_results[lmm_results[!,:rnntype].=="SRN",:]
+    lmm_gru  = lmm_results[lmm_results[!,:rnntype].=="GRU",:]
+    lmm_lstm = lmm_results[lmm_results[!,:rnntype].=="LSTM",:]
 
     (intercept_srn,  fit_srn,  se_srn,  x_srn)  = do_gam(lmm_srn)
     (intercept_gru,  fit_gru,  se_gru,  x_gru)  = do_gam(lmm_gru)
     (intercept_lstm, fit_lstm, se_lstm, x_lstm) = do_gam(lmm_lstm)
-
-    gam_curve_srn  = DataFrame(rnntype="SRN",  fit=intercept_srn +fit_srn,  se=se_srn,  x=x_srn)
-    gam_curve_gru  = DataFrame(rnntype="GRU",  fit=intercept_gru +fit_gru,  se=se_gru,  x=x_gru)
-    gam_curve_lstm = DataFrame(rnntype="LSTM", fit=intercept_lstm+fit_lstm, se=se_lstm, x=x_lstm)
+ 
+    gam_curve_srn  = DataFrame(rnntype="SRN",  fit=intercept_srn .+ fit_srn,  se=se_srn,  x=x_srn)
+    gam_curve_gru  = DataFrame(rnntype="GRU",  fit=intercept_gru .+ fit_gru,  se=se_gru,  x=x_gru)
+    gam_curve_lstm = DataFrame(rnntype="LSTM", fit=intercept_lstm .+ fit_lstm, se=se_lstm, x=x_lstm)
 
     [gam_curve_srn; gam_curve_gru; gam_curve_lstm]
 end
